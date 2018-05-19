@@ -10,7 +10,7 @@ platform:
 
 # specify custom environment variables
 environment:
-  - DUMMY: dummy
+  DUMMY: dummy
 
 # build configuration, i.e. Debug, Release, etc.
 configuration:
