@@ -5,15 +5,12 @@ image:
   - Visual Studio 2017
   - Ubuntu
 
-platform: x64
+platform:
+  - x64
 
 # specify custom environment variables
 environment:
-  MSVC_DEFAULT_OPTIONS: ON
-  CMAKE_TOOLCHAIN_FILE: -DCMAKE_TOOLCHAIN_FILE="C:\tools\vcpkg\scripts\buildsystems\vcpkg.cmake"
-  matrix:
-    - CMAKE_GENERATOR: -G"Visual Studio 15 2017 Win64"
-      CMAKE_TOOLCHAIN: -T"v141"
+  #- DUMMY: dummy
 
 # build configuration, i.e. Debug, Release, etc.
 configuration:
@@ -40,7 +37,7 @@ install:
   - cmd: cd C:\tools\vcpkg
   - cmd: git pull
   - cmd: .\bootstrap-vcpkg.bat
-  
+
   - cmd: if "%platform%"=="Win32" set VCPKG_ARCH=x86-windows
   - cmd: if "%platform%"=="x64"   set VCPKG_ARCH=x64-windows
 
@@ -48,11 +45,11 @@ install:
   - cmd: vcpkg remove --outdated --recurse
 
   # install required dependencies
-  - cmd: vcpkg install --recurse --triplet %VCPKG_ARCH% zlib boost-iostreams boost-program-options boost-system boost-serialization eigen3 ceres opencv cgal
-  
+  - cmd: vcpkg install --recurse --triplet %VCPKG_ARCH% zlib boost-iostreams boost-program-options boost-system boost-serialization eigen3 ceres
+
   # install optional dependencies
   - cmd: vcpkg install --recurse --triplet %VCPKG_ARCH% glew glfw3
-  
+
   - cmd: vcpkg integrate install
   - cmd: cd "%APPVEYOR_BUILD_FOLDER%"
 
@@ -70,19 +67,26 @@ cache:
   - C:\tools\vcpkg\installed -> .appveyor.yml
 
 build_script:
+  # get VCG library
+  - git clone https://github.com/cdcseacave/VCG.git
+  
   #------------------
   # Windows 10
   #------------------
-  - cmd: git clone https://github.com/cdcseacave/VCG.git
+  - cmd: dir
+  - cmd: if "%platform%"=="Win32" set CMAKE_GENERATOR=-G"Visual Studio 15 2017"
+  - cmd: if "%platform%"=="x64"   set CMAKE_GENERATOR=-G"Visual Studio 15 2017 Win64"
   - cmd: mkdir build && cd build
-  - cmd: cmake %CMAKE_GENERATOR% -DCMAKE_BUILD_TYPE=%configuration% -DVCG_ROOT="..\VCG" %CMAKE_TOOLCHAIN_FILE% %CMAKE_TOOLCHAIN% ..
+  - cmd: cmake %CMAKE_GENERATOR% -DCMAKE_BUILD_TYPE=%configuration% -DCMAKE_TOOLCHAIN_FILE="C:\tools\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCG_ROOT="..\VCG" ..
   - cmd: cmake --build . --target ALL_BUILD --config %configuration% -- /maxcpucount:4
   
   #------------------
   # Ubuntu 16.04 LTS
   #------------------
-  - sh: git clone https://github.com/cdcseacave/VCG.git
-  - sh: mkdir build && cd build
+  - sh: ls
+  - sh: cd build && ls
+  - sh: cd build
+  #- sh: mkdir build && cd build
   - sh: cmake -DCMAKE_BUILD_TYPE=$configuration -DVCG_ROOT="../VCG" ..
   - sh: make -j4
 
