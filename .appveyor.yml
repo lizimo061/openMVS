@@ -73,20 +73,16 @@ build_script:
   #------------------
   # Windows 10
   #------------------
-  - cmd: dir
   - cmd: if "%platform%"=="Win32" set CMAKE_GENERATOR=-G"Visual Studio 15 2017"
   - cmd: if "%platform%"=="x64"   set CMAKE_GENERATOR=-G"Visual Studio 15 2017 Win64"
-  - cmd: mkdir build && cd build
-  - cmd: cmake %CMAKE_GENERATOR% -DCMAKE_BUILD_TYPE=%configuration% -DCMAKE_TOOLCHAIN_FILE="C:\tools\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCG_ROOT="..\VCG" ..
-  - cmd: cmake --build . --target ALL_BUILD --config %configuration% -- /maxcpucount:4
+  - cmd: mkdir bin && cd bin
+  #- cmd: cmake %CMAKE_GENERATOR% -DCMAKE_BUILD_TYPE=%configuration% -DCMAKE_TOOLCHAIN_FILE="C:\tools\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCG_ROOT="..\VCG" ..
+  #- cmd: cmake --build . --target ALL_BUILD --config %configuration% -- /maxcpucount:4
   
   #------------------
   # Ubuntu 16.04 LTS
   #------------------
-  - sh: ls
-  - sh: cd build && ls
-  - sh: cd build
-  #- sh: mkdir build && cd build
+  - sh: mkdir bin && cd bin
   - sh: cmake -DCMAKE_BUILD_TYPE=$configuration -DVCG_ROOT="../VCG" ..
   - sh: make -j4
 
