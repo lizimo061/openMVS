@@ -129,6 +129,7 @@ endif()
 
 find_package(Qt5 REQUIRED
     Core
+    PrintSupport
     Gui
     Widgets
     Test

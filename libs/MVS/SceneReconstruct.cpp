@@ -778,6 +778,18 @@ bool Scene::ReconstructMesh(float distInsert, bool bUseFreeSpaceSupport, unsigne
 		int li, lj;
 		std::for_each(indices.cbegin(), indices.cend(), [&](size_t idx) {
 			const point_t& p = vertices[idx];
+			if (std::isnan(p.hx())){ 
+				std::cout << "X nan" << std::endl;
+				return; 
+			}
+			else if (std::isnan(p.hy())){
+				std::cout << "Y nan" << std::endl;
+				return; 
+			}
+			else if (std::isnan(p.hz())){
+				std::cout << "Z nan" << std::endl;
+				return; 
+			}
 			const PointCloud::Point& point = pointcloud.points[idx];
 			const PointCloud::ViewArr& views = pointcloud.pointViews[idx];
 			ASSERT(!views.IsEmpty());
