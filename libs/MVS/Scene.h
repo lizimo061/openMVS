@@ -37,6 +37,7 @@
 
 #include "DepthMap.h"
 #include "Mesh.h"
+#include "LidarCloud.h"
 
 
 // D E F I N E S ///////////////////////////////////////////////////
@@ -54,6 +55,8 @@ public:
 	PointCloud pointcloud; // point-cloud (sparse or dense), each containing the point position and the views seeing it
 	Mesh mesh; // mesh, represented as vertices and triangles, constructed from the input point-cloud
 
+	LidarCloud lidarpointcloud; // lidar pointcloud added
+
 	unsigned nCalibratedImages; // number of valid images
 
 	unsigned nMaxThreads; // maximum number of threads used to distribute the work load
@@ -66,6 +69,7 @@ public:
 
 	bool LoadInterface(const String& fileName);
 	bool SaveInterface(const String& fileName) const;
+	bool LoadLidar(const String& fileName); // Load LiDAR points
 
 	bool Load(const String& fileName);
 	bool Save(const String& fileName, ARCHIVE_TYPE type=ARCHIVE_BINARY_ZIP) const;

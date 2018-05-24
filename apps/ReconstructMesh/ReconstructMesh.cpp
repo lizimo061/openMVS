@@ -49,6 +49,12 @@ using namespace MVS;
 // S T R U C T S ///////////////////////////////////////////////////
 
 namespace OPT {
+//LiDAR Part
+String strSubsampledLidarFileName;
+String strLidarFileName;
+bool blidarOnly;
+
+
 String strInputFileName;
 String strOutputFileName;
 String strMeshFileName;
@@ -104,6 +110,9 @@ bool Initialize(size_t argc, LPCTSTR* argv)
 	config_main.add_options()
 		("input-file,i", boost::program_options::value<std::string>(&OPT::strInputFileName), "input filename containing camera poses and image list")
 		("output-file,o", boost::program_options::value<std::string>(&OPT::strOutputFileName), "output filename for storing the mesh")
+		("lidar-file,l", boost::program_options::value<std::string>(&OPT::strLidarFileName), "lidar pointcloud filename")
+		("subsampled-lidar,a", boost::program_options::value<std::string>(&OPT::strSubsampledLidarFileName), "lidar subsampled pointcloud filename")
+		("lidar-only", boost::program_options::value<bool>(&OPT::blidarOnly)->default_value(false), "create reconstruction using lidar only")		
 		("min-point-distance,d", boost::program_options::value<float>(&OPT::fDistInsert)->default_value(2.5f), "minimum distance in pixels between the projection of two 3D points to consider them different while triangulating (0 - disabled)")
 		("constant-weight", boost::program_options::value<bool>(&OPT::bUseConstantWeight)->default_value(true), "considers all view weights 1 instead of the available weight")
 		("free-space-support,f", boost::program_options::value<bool>(&OPT::bUseFreeSpaceSupport)->default_value(false), "exploits the free-space support in order to reconstruct weakly-represented surfaces")
@@ -219,6 +228,21 @@ int main(int argc, LPCTSTR* argv)
 	// load project
 	if (!scene.Load(MAKE_PATH_SAFE(OPT::strInputFileName)))
 		return EXIT_FAILURE;
+
+	// load LiDAR data
+	if(!OPT::strLidarFileName.IsEmpty())
+	{
+		if (!scene.lidarpointcloud.LoadLidar(MAKE_PATH_SAFE(OPT::strLidarFileName)))
+			return EXIT_FAILURE;
+	}
+
+	if(!OPT::strSubsampledLidarFileName.IsEmpty())
+	{
+	if (!scene.lidarpointcloud.LoadSubsampledLidar(MAKE_PATH_SAFE(OPT::strSubsampledLidarFileName)))
+		return EXIT_FAILURE;
+	}
+
+	
 	if (OPT::bMeshExport) {
 		// check there is a mesh to export
 		if (scene.mesh.IsEmpty())
