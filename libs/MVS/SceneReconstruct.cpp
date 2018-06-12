@@ -31,6 +31,11 @@
 
 #include "Common.h"
 #include "Scene.h"
+#include "PlaneDetector.h"
+
+#include <pcl/io/ply_io.h>
+#include <pcl/point_cloud.h>
+
 // Delaunay: mesh reconstruction
 #include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
 #include <CGAL/Delaunay_triangulation_3.h>
@@ -42,6 +47,7 @@
 #include <CGAL/AABB_triangle_primitive.h>
 #include <CGAL/Polyhedron_3.h>
 
+#include <limits> 
 using namespace MVS;
 
 
@@ -735,6 +741,9 @@ float computePlaneSphereAngle(const delaunay_t& Tr, const facet_t& facet)
 }
 } // namespace DELAUNAY
 
+//TODO: Refer to autel-mapping OpenMVS line 739, there are some gradient calculation
+
+
 // First, iteratively create a Delaunay triangulation of the existing point-cloud by inserting point by point,
 // iif the point to be inserted is not closer than distInsert pixels in at least one of its views to
 // the projection of any of already inserted points.
@@ -757,6 +766,72 @@ bool Scene::ReconstructMesh(float distInsert, bool bUseFreeSpaceSupport, unsigne
 	std::vector<camera_cell_t> camCells;
 	std::vector<facet_t> hullFacets;
 	{
+		// Put camera and LiDAR points together
+		
+		size_t total_pc_size = pointcloud.GetSize() + lidarpointcloud.GetSize();
+	
+		std::vector<velodyne_Point> total_pc;
+		std::vector<velodyne_Point> enforced_pc;
+
+		pcl::PointCloud<pcl::PointWithViewpoint> output_pc;
+		pcl::PLYWriter ply_writer;
+
+		for(size_t i = 0;i < pointcloud.GetSize(); i++){
+			velodyne_Point tmp(pointcloud.points[i].x, pointcloud.points[i].y, pointcloud.points[i].z, i);
+			total_pc.push_back (tmp);
+			pcl::PointWithViewpoint pt((float)pointcloud.points[i].x, (float)pointcloud.points[i].y, (float)pointcloud.points[i].z,0 ,0, 0);
+			output_pc.push_back(pt);
+		}
+
+		for(size_t i = 0;i < lidarpointcloud.GetSize();i++){
+			velodyne_Point tmp(lidarpointcloud.points[i].x, lidarpointcloud.points[i].y, lidarpointcloud.points[i].z, i + pointcloud.GetSize());
+			total_pc.push_back(tmp);
+			pcl::PointWithViewpoint pt((float)lidarpointcloud.points[i].x, (float)lidarpointcloud.points[i].y, (float)lidarpointcloud.points[i].z, 0, 0, 0);
+			output_pc.push_back(pt);
+		}
+		
+		std::string path = "/home/zimol/Documents/autel_ws/inverse_lab/trajectory/vis_lid_pc.ply";
+		ply_writer.write<pcl::PointWithViewpoint>(path, output_pc, false);
+
+		std::cout << "Starting extracting planes ...." << std::endl;
+
+
+
+		RegionInterested _roi(NO_LIMIT, NO_LIMIT, NO_LIMIT, NO_LIMIT, NO_LIMIT, NO_LIMIT);
+		PlaneLineDetector plane_detector(total_pc, _roi, 0.05, 40, 0.3);
+		
+		plane_detector.detect();
+		enforced_pc = plane_detector.project_to_plane();
+
+	
+		// Enforce plane constraint
+		for(size_t i = 0;i < enforced_pc.size(); i++){
+			velodyne_Point tmp = enforced_pc[i];
+			double index = tmp.i;
+			if(index < pointcloud.GetSize())
+			{
+				//std::cout << pointcloud.points[index].x << "  " << tmp.x << std::endl;
+
+				pointcloud.points[index].x = tmp.x;
+				pointcloud.points[index].y = tmp.y;
+				pointcloud.points[index].z = tmp.z;
+			}
+			else
+			{
+				index = index - pointcloud.GetSize();
+				lidarpointcloud.points[index].x = tmp.x;
+				lidarpointcloud.points[index].y = tmp.y;
+				lidarpointcloud.points[index].z = tmp.z;
+			}
+		}
+
+		std::cout << "Finish forcing points on planes ...." << std::endl;
+		
+
+
+
+
+
 		TD_TIMER_STARTD();
 
 		std::vector<point_t> vertices(pointcloud.points.GetSize());
@@ -856,6 +931,16 @@ bool Scene::ReconstructMesh(float distInsert, bool bUseFreeSpaceSupport, unsigne
 			hint->info().InsertViews(pointcloud, idx);
 			++progress;
 		});
+
+		// insert LiDAR points
+		FOREACH(i, lidarpointcloud.points)
+		{
+			const PointCloud::Point& X(lidarpointcloud.points[i]);
+			const point_t this_point(X.x, X.y, X.z);
+			hint = delaunay.insert(this_point);
+			ASSERT(hint != vertex_handle_t());
+		}
+
 		progress.close();
 		pointcloud.Release();
 		// init cells weights and
@@ -998,10 +1083,102 @@ bool Scene::ReconstructMesh(float distInsert, bool bUseFreeSpaceSupport, unsigne
 			}
 			++progress;
 		}
+
+		std::cout << "Before the lidar loop" << std::endl;
+		//repeat for all the lidar points 
+		//for(int i = 0; i < lidarpointcloud.points.GetSize(); i++) {
+
+		FOREACH(i, lidarpointcloud.points){
+			// std::cout << "Entered the lidar loop" << std::endl;
+			const LidarCloud::Point& X(lidarpointcloud.points[i]);
+			const LidarCloud::Point& C(lidarpointcloud.pointViews[i]);
+
+			camera_cell_t camCell;
+			camCell.cell = delaunay.locate(MVS2CGAL(C));
+			ASSERT(camCell.cell != cell_handle_t());
+
+			//Can write a new version that uses the camera width and height and correct LiDAR pose
+			fetchCellFacets<CGAL::POSITIVE>(delaunay, hullFacets, camCell.cell, images[0], camCell.facets);
+
+
+			// link all cells contained by the camera to the source
+			for (const facet_t& f: camCell.facets)
+				infoCells[f.first->info()].s = kInf;
+
+			//set a constant alpha_vis value?
+			const Point3 pt(X);
+			const Point3 v_pt(C);
+
+			const edge_cap_t alpha_vis = 5.0;
+
+			// compute the ray used to find point intersection
+			const Point3 vecCamPoint(pt-v_pt);
+			const REAL invLenCamPoint(REAL(1)/norm(vecCamPoint));
+
+			intersection_t inter(pt, Point3(vecCamPoint*invLenCamPoint));
+
+
+			// find faces intersected by the camera-point segment
+			const segment_t segCamPoint(MVS2CGAL(C), MVS2CGAL(X));
+
+
+			// do {
+			
+			// } 
+			if (!intersect(delaunay, segCamPoint, camCell.facets, facets, inter))
+				continue;
+
+			do
+			{
+				if(inter.dist==std::numeric_limits<float>::lowest())
+					continue;
+
+				// assign score, weighted by the distance from the point to the intersection
+				const edge_cap_t w(alpha_vis*(1.f-EXP(-SQUARE((float)inter.dist)*inv2SigmaSq)));
+
+				edge_cap_t& f(infoCells[inter.facet.first->info()].f[inter.facet.second]);
+				#ifdef DELAUNAY_USE_OPENMP
+				#pragma omp atomic
+				#endif
+				f += w;
+			}while (intersect(delaunay, segCamPoint, facets, facets, inter));
+
+
+			ASSERT(facets.empty());
+
+			// find faces intersected by the endpoint-point segment
+			inter.dist = FLT_MAX; inter.bigger = false;
+			const Point3 endPoint(pt+vecCamPoint*(invLenCamPoint*sigma));
+			const segment_t segEndPoint(MVS2CGAL(endPoint), MVS2CGAL(X));
+			const cell_handle_t vertexCell(delaunay.locate(MVS2CGAL(X)));
+			const cell_handle_t endCell(delaunay.locate(segEndPoint.source(), vertexCell));
+			ASSERT(endCell != cell_handle_t());
+			fetchCellFacets<CGAL::NEGATIVE>(delaunay, hullFacets, endCell, images[0], facets);
+			edge_cap_t& t(infoCells[endCell->info()].t);
+			#ifdef DELAUNAY_USE_OPENMP
+			#pragma omp atomic
+			#endif
+			t += alpha_vis;		
+
+			while (intersect(delaunay, segEndPoint, facets, facets, inter)) {
+				// assign score, weighted by the distance from the point to the intersection
+				const facet_t& mf(delaunay.mirror_facet(inter.facet));
+				const edge_cap_t w(alpha_vis*(1.f-EXP(-SQUARE((float)inter.dist)*inv2SigmaSq)));
+				edge_cap_t& f(infoCells[mf.first->info()].f[mf.second]);
+				#ifdef DELAUNAY_USE_OPENMP
+				#pragma omp atomic
+				#endif
+				f += w;
+			}
+			ASSERT(facets.empty());
+		}
+
+
 		progress.close();
 		DEBUG_ULTIMATE("\tweighting completed in %s", TD_TIMER_GET_FMT().c_str());
 		}
 		camCells.clear();
+		lidarpointcloud.Release();
 
 		#ifdef DELAUNAY_WEAKSURF
 		// enforce t-edges for each point-camera pair with free-space support weights
